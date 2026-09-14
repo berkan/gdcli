@@ -241,3 +241,8 @@ Fork of [badlogic/gdcli](https://github.com/badlogic/gdcli). Two changes:
   the host side (Swift Touch ID helper + Node broker) lives in the separate `gauth-host` repo.
 
 Install from source: `npm install && npm run build && npm i -g .`
+
+## Credits
+
+Fork changes written with [Claude Code](https://claude.com/claude-code) (Claude Fable 5.1). Security review of the
+approval gate by OpenAI Codex (gpt-5.6-sol), findings fixed in the follow-up commit.
