@@ -2,9 +2,11 @@
 
 import * as fs from "fs";
 import { parseArgs } from "util";
+import { handleApprovalCommand, requireApproval } from "./approval.js";
 import { DriveService } from "./drive-service.js";
 
 const service = new DriveService();
+const TOOL = "gdcli";
 
 function usage(): never {
 	console.log(`gdcli - Google Drive CLI
@@ -20,6 +22,19 @@ ACCOUNT COMMANDS
   gdcli accounts list                        List configured accounts
   gdcli accounts add <email> [--manual]      Add account (--manual for browserless OAuth)
   gdcli accounts remove <email>              Remove account
+  gdcli accounts reauth [emails...] [--manual]
+                                             Re-authorize accounts (all if none given)
+
+APPROVAL
+
+  Irreversible actions (delete, share, unshare) print what they will do and
+  wait for human approval: Touch ID on the macOS host (directly, or via the
+  gauth broker from a container), falling back to a passphrase typed on the
+  terminal.
+
+  gdcli approval set-passphrase              Set the fallback passphrase
+  gdcli approval status                      Show which approval methods are available
+  gdcli approval test                        Run a test approval
 
 DRIVE COMMANDS
 
@@ -130,6 +145,10 @@ async function main() {
 			await handleAccounts(rest);
 			return;
 		}
+		if (first === "approval") {
+			await handleApprovalCommand(TOOL, rest);
+			return;
+		}
 
 		const account = first;
 		const command = rest[0];
@@ -183,13 +202,17 @@ async function main() {
 				error(`Unknown command: ${command}`);
 		}
 	} catch (e) {
-		error(e instanceof Error ? e.message : String(e));
+		const msg = e instanceof Error ? e.message : String(e);
+		if (msg.includes("invalid_grant")) {
+			error(`${msg}\nToken expired or revoked. Run: ${TOOL} accounts reauth ${first}`);
+		}
+		error(msg);
 	}
 }
 
 async function handleAccounts(args: string[]) {
 	const action = args[0];
-	if (!action) error("Missing action: list|add|remove|credentials");
+	if (!action) error("Missing action: list|add|remove|reauth|credentials");
 
 	switch (action) {
 		case "list": {
@@ -231,6 +254,18 @@ async function handleAccounts(args: string[]) {
 			if (!email) error("Usage: accounts remove <email>");
 			const deleted = service.deleteAccount(email);
 			console.log(deleted ? `Removed '${email}'` : `Not found: ${email}`);
+			break;
+		}
+		case "reauth": {
+			const manual = args.includes("--manual");
+			const emails = args.slice(1).filter((a) => a !== "--manual");
+			const targets = emails.length > 0 ? emails : service.listAccounts().map((a) => a.email);
+			if (targets.length === 0) error("No accounts configured");
+			for (const email of targets) {
+				console.log(`Re-authorizing '${email}'...`);
+				await service.reauthAccount(email, manual);
+				console.log(`Account '${email}' re-authorized`);
+			}
 			break;
 		}
 		default:
@@ -385,6 +420,8 @@ async function handleDelete(account: string, args: string[]) {
 	const fileId = args[0];
 	if (!fileId) error("Usage: <email> delete <fileId>");
 
+	await requireApproval({ tool: TOOL, account, action: "delete", details: await describeFile(account, fileId) });
+
 	await service.delete(account, fileId);
 	console.log("Deleted");
 }
@@ -425,6 +462,16 @@ async function handleShare(account: string, args: string[]) {
 	if (!values.anyone && !values.email) error("Must specify --anyone or --email <addr>");
 
 	const role = (values.role as "reader" | "writer") || "reader";
+	await requireApproval({
+		tool: TOOL,
+		account,
+		action: "share",
+		details: [
+			...(await describeFile(account, fileId)),
+			`With: ${values.anyone ? "ANYONE with the link" : values.email}`,
+			`Role: ${role}`,
+		],
+	});
 	const result = await service.share(account, fileId, {
 		anyone: values.anyone,
 		email: values.email,
@@ -439,6 +486,13 @@ async function handleUnshare(account: string, args: string[]) {
 	const fileId = args[0];
 	const permissionId = args[1];
 	if (!fileId || !permissionId) error("Usage: <email> unshare <fileId> <permissionId>");
+
+	await requireApproval({
+		tool: TOOL,
+		account,
+		action: "unshare",
+		details: [...(await describeFile(account, fileId)), `Permission: ${permissionId}`],
+	});
 
 	await service.unshare(account, fileId, permissionId);
 	console.log("Permission removed");
@@ -457,6 +511,13 @@ async function handlePermissions(account: string, args: string[]) {
 			console.log(`${p.id}\t${p.type}\t${p.role}\t${p.email || "-"}`);
 		}
 	}
+}
+
+/** Human-readable summary of a file, for approval prompts. */
+async function describeFile(account: string, fileId: string): Promise<string[]> {
+	const file = await service.getFile(account, fileId);
+	const type = file.mimeType?.includes("folder") ? "folder" : file.mimeType || "file";
+	return [`File: ${fileId}`, `Name: ${file.name}`, `Type: ${type}`, `Size: ${formatSize(file.size)}`];
 }
 
 function handleUrl(args: string[]) {

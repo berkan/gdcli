@@ -227,3 +227,17 @@ npm run check
 ## License
 
 MIT
+
+## Fork additions (berkan)
+
+Fork of [badlogic/gdcli](https://github.com/badlogic/gdcli). Two changes:
+
+- `gdcli accounts reauth [emails...] [--manual]` re-runs OAuth for the given accounts (all if none) and replaces the
+  stored refresh token in place. `invalid_grant` errors print this command. (Weekly expiry is caused by the OAuth
+  app being in "Testing" status; setting it to "In production" in the Cloud Console removes it.)
+- Irreversible actions (`delete`, `share`, `unshare`) print what they will do and block for human approval: Touch ID on the
+  macOS host, directly or via the `gauth` broker from a container, with a passphrase typed on `/dev/tty` as fallback.
+  `gdcli approval status | test | set-passphrase`. The gate is `src/approval.ts`, identical across gmcli/gccli/gdcli;
+  the host side (Swift Touch ID helper + Node broker) lives in the separate `gauth-host` repo.
+
+Install from source: `npm install && npm run build && npm i -g .`

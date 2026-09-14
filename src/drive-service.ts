@@ -25,6 +25,21 @@ export class DriveService {
 	private accountStorage = new AccountStorage();
 	private driveClients: Map<string, drive_v3.Drive> = new Map();
 
+	/** Re-run the OAuth flow for an existing account and replace its refresh token. */
+	async reauthAccount(email: string, manual = false): Promise<void> {
+		const account = this.accountStorage.getAccount(email);
+		if (!account) {
+			throw new Error(`Account '${email}' not found`);
+		}
+		const oauthFlow = new DriveOAuthFlow(account.oauth2.clientId, account.oauth2.clientSecret);
+		const refreshToken = await oauthFlow.authorize(manual);
+		this.accountStorage.addAccount({
+			email,
+			oauth2: { clientId: account.oauth2.clientId, clientSecret: account.oauth2.clientSecret, refreshToken },
+		});
+		this.driveClients.delete(email);
+	}
+
 	async addAccount(email: string, clientId: string, clientSecret: string, manual = false): Promise<void> {
 		if (this.accountStorage.hasAccount(email)) {
 			throw new Error(`Account '${email}' already exists`);
