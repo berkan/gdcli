@@ -1,4 +1,4 @@
-import { type drive_v3 } from "googleapis";
+import { type drive_v3 } from "@googleapis/drive";
 import type { DriveAccount } from "./types.js";
 type DriveFile = drive_v3.Schema$File;
 export interface FileListResult {

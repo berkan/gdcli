@@ -1,8 +1,8 @@
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
+import { drive as driveApi } from "@googleapis/drive";
 import { OAuth2Client } from "google-auth-library";
-import { google } from "googleapis";
 import { AccountStorage } from "./account-storage.js";
 import { DriveOAuthFlow } from "./drive-oauth-flow.js";
 export class DriveService {
@@ -53,7 +53,7 @@ export class DriveService {
     async verifyIdentity(email, clientId, clientSecret, refreshToken) {
         const oauth2Client = new OAuth2Client(clientId, clientSecret, "http://localhost");
         oauth2Client.setCredentials({ refresh_token: refreshToken });
-        const drive = google.drive({ version: "v3", auth: oauth2Client });
+        const drive = driveApi({ version: "v3", auth: oauth2Client });
         const about = await drive.about.get({ fields: "user(emailAddress)" });
         const actual = about.data.user?.emailAddress || "";
         if (actual.toLowerCase() !== email.toLowerCase()) {
@@ -71,7 +71,7 @@ export class DriveService {
                 refresh_token: account.oauth2.refreshToken,
                 access_token: account.oauth2.accessToken,
             });
-            const drive = google.drive({ version: "v3", auth: oauth2Client });
+            const drive = driveApi({ version: "v3", auth: oauth2Client });
             this.driveClients.set(email, drive);
         }
         return this.driveClients.get(email);
